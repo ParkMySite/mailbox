@@ -1,0 +1,1493 @@
+/*******************************************************
+ * INTERNAL MAILBOX - USER REGISTRATION API
+ * -----------------------------------------------------
+ * STATIC HTML + GOOGLE APPS SCRIPT API
+ *
+ * USERS SPREADSHEET
+ * ID:
+ * 1Ud2hZGTxwIrJAWSaufgSmfb3BAyBcVXUuxG_nhvO3_0
+ *
+ * USERS SHEET:
+ * Users
+ *
+ * MAIL DOMAIN CONFIGURATION
+ * ID:
+ * 1nEVX-k4gQfXfl-pzEU4CNRshJtgjCiCtD-xiKCHqs2s
+ *
+ * SHEET:
+ * Configuration
+ *
+ * CELL:
+ * B25
+ *
+ * API ACTIONS
+ * -----------------------------------------------------
+ * GET
+ *   ?action=getConfiguration
+ *   ?action=checkUsername&username=gokul
+ *
+ * POST
+ *   action=registerUser
+ *
+ * The frontend is a STATIC HTML file.
+ * google.script.run is NOT used.
+ *******************************************************/
+
+
+/* =====================================================
+   CONFIGURATION
+   ===================================================== */
+
+const USERS_SPREADSHEET_ID =
+  '1Ud2hZGTxwIrJAWSaufgSmfb3BAyBcVXUuxG_nhvO3_0';
+
+const USERS_SHEET_NAME =
+  'Users';
+
+
+const MAIL_DOMAIN_SPREADSHEET_ID =
+  '1nEVX-k4gQfXfl-pzEU4CNRshJtgjCiCtD-xiKCHqs2s';
+
+const MAIL_DOMAIN_SHEET_NAME =
+  'Configuration';
+
+const MAIL_DOMAIN_CELL =
+  'B25';
+
+
+/* =====================================================
+   USERS HEADERS
+   ===================================================== */
+
+const USERS_HEADERS = [
+
+  'User_ID',
+  'Email_Address',
+  'Password_Hash',
+  'Full_Name',
+  'Designation',
+  'Department',
+  'Mobile',
+  'Recovery_Email',
+  'Role',
+  'Status',
+  'Profile_Image_URL',
+  'Created_Date',
+  'Last_Login',
+  'Failed_Login_Count',
+  'Last_Failed_Login',
+  'Session_Revoked',
+  'Force_Password_Change'
+
+];
+
+
+/* =====================================================
+   DO GET
+   ===================================================== */
+
+function doGet(e) {
+
+  try {
+
+    const params =
+      e && e.parameter
+        ? e.parameter
+        : {};
+
+    const action =
+      String(
+        params.action || ''
+      ).trim();
+
+
+    /*
+     * Health check
+     */
+
+    if (!action) {
+
+      return jsonResponse_({
+
+        ok: true,
+
+        service:
+          'Internal Mailbox Registration API',
+
+        status:
+          'online'
+
+      });
+
+    }
+
+
+    /* -----------------------------------------------
+       GET CONFIGURATION
+       ----------------------------------------------- */
+
+    if (
+      action ===
+      'getConfiguration'
+    ) {
+
+      return jsonResponse_(
+        getRegistrationConfiguration()
+      );
+
+    }
+
+
+    /* -----------------------------------------------
+       CHECK USERNAME
+       ----------------------------------------------- */
+
+    if (
+      action ===
+      'checkUsername'
+    ) {
+
+      return jsonResponse_(
+        checkMailboxUsername(
+          params.username
+        )
+      );
+
+    }
+
+
+    return jsonResponse_({
+
+      ok: false,
+
+      message:
+        'Invalid API action.'
+
+    });
+
+  }
+
+  catch (error) {
+
+    return jsonResponse_({
+
+      ok: false,
+
+      message:
+        errorMessage_(error)
+
+    });
+
+  }
+
+}
+
+
+/* =====================================================
+   DO POST
+   ===================================================== */
+
+function doPost(e) {
+
+  try {
+
+    if (
+      !e ||
+      !e.postData ||
+      !e.postData.contents
+    ) {
+
+      return jsonResponse_({
+
+        ok: false,
+
+        message:
+          'Empty API request.'
+
+      });
+
+    }
+
+
+    let request;
+
+
+    try {
+
+      request =
+        JSON.parse(
+          e.postData.contents
+        );
+
+    }
+
+    catch (parseError) {
+
+      return jsonResponse_({
+
+        ok: false,
+
+        message:
+          'Invalid JSON request.'
+
+      });
+
+    }
+
+
+    const action =
+      String(
+        request.action || ''
+      ).trim();
+
+
+    /* -----------------------------------------------
+       REGISTER USER
+       ----------------------------------------------- */
+
+    if (
+      action ===
+      'registerUser'
+    ) {
+
+      const result =
+        registerUser(
+          request.data || {}
+        );
+
+
+      return jsonResponse_(
+        result
+      );
+
+    }
+
+
+    return jsonResponse_({
+
+      ok: false,
+
+      message:
+        'Invalid POST action.'
+
+    });
+
+  }
+
+  catch (error) {
+
+    return jsonResponse_({
+
+      ok: false,
+
+      message:
+        errorMessage_(error)
+
+    });
+
+  }
+
+}
+
+
+/* =====================================================
+   JSON RESPONSE
+   ===================================================== */
+
+function jsonResponse_(data) {
+
+  return ContentService
+
+    .createTextOutput(
+      JSON.stringify(data)
+    )
+
+    .setMimeType(
+      ContentService.MimeType.JSON
+    );
+
+}
+
+
+/* =====================================================
+   REGISTRATION CONFIGURATION
+   ===================================================== */
+
+function getRegistrationConfiguration() {
+
+  const domain =
+    getMailboxDomain();
+
+
+  return {
+
+    ok: true,
+
+    domain: domain
+
+  };
+
+}
+
+
+/* =====================================================
+   GET MAILBOX DOMAIN
+   ===================================================== */
+
+function getMailboxDomain() {
+
+  const ss =
+    SpreadsheetApp.openById(
+      MAIL_DOMAIN_SPREADSHEET_ID
+    );
+
+
+  const sheet =
+    ss.getSheetByName(
+      MAIL_DOMAIN_SHEET_NAME
+    );
+
+
+  if (!sheet) {
+
+    throw new Error(
+      'Configuration sheet was not found.'
+    );
+
+  }
+
+
+  let domain =
+    String(
+      sheet
+        .getRange(
+          MAIL_DOMAIN_CELL
+        )
+        .getDisplayValue() || ''
+    )
+      .trim()
+      .toLowerCase();
+
+
+  if (!domain) {
+
+    throw new Error(
+      'Mailbox domain is not configured in Configuration!B25.'
+    );
+
+  }
+
+
+  /*
+   * Support both:
+   *
+   * example.com
+   *
+   * and:
+   *
+   * @example.com
+   */
+
+  domain =
+    domain.replace(
+      /^@+/,
+      ''
+    );
+
+
+  domain =
+    domain.replace(
+      /\s+/g,
+      ''
+    );
+
+
+  if (
+    !isValidDomain_(
+      domain
+    )
+  ) {
+
+    throw new Error(
+      'Invalid mailbox domain configured in Configuration!B25.'
+    );
+
+  }
+
+
+  return '@' + domain;
+
+}
+
+
+/* =====================================================
+   CHECK MAILBOX USERNAME
+   ===================================================== */
+
+function checkMailboxUsername(
+  username
+) {
+
+  username =
+    normalizeUsername_(
+      username
+    );
+
+
+  const domain =
+    getMailboxDomain();
+
+
+  if (!username) {
+
+    return {
+
+      ok: true,
+
+      available: false,
+
+      message:
+        'Enter a username.',
+
+      suggestions: []
+
+    };
+
+  }
+
+
+  if (
+    !isValidUsername_(
+      username
+    )
+  ) {
+
+    return {
+
+      ok: true,
+
+      available: false,
+
+      message:
+        'Use 3-30 characters: letters, numbers, dot, underscore or hyphen.',
+
+      suggestions: []
+
+    };
+
+  }
+
+
+  const email =
+    username + domain;
+
+
+  const users =
+    getUsersObjects_();
+
+
+  const exists =
+    users.some(
+      function(user) {
+
+        return (
+          normalizeEmail_(
+            user.Email_Address
+          ) === email
+        );
+
+      }
+    );
+
+
+  /*
+   * AVAILABLE
+   */
+
+  if (!exists) {
+
+    return {
+
+      ok: true,
+
+      available: true,
+
+      username:
+        username,
+
+      email:
+        email,
+
+      message:
+        email +
+        ' is available.',
+
+      suggestions: []
+
+    };
+
+  }
+
+
+  /*
+   * ALREADY EXISTS
+   */
+
+  const suggestions = [];
+
+  let counter = 1;
+
+
+  while (
+    suggestions.length < 5 &&
+    counter <= 999
+  ) {
+
+    const suggestedUsername =
+      username + counter;
+
+
+    const suggestedEmail =
+      suggestedUsername + domain;
+
+
+    const alreadyExists =
+      users.some(
+        function(user) {
+
+          return (
+            normalizeEmail_(
+              user.Email_Address
+            ) ===
+            suggestedEmail
+          );
+
+        }
+      );
+
+
+    if (!alreadyExists) {
+
+      suggestions.push({
+
+        username:
+          suggestedUsername,
+
+        email:
+          suggestedEmail
+
+      });
+
+    }
+
+
+    counter++;
+
+  }
+
+
+  return {
+
+    ok: true,
+
+    available: false,
+
+    username:
+      username,
+
+    email:
+      email,
+
+    message:
+      email +
+      ' is already registered.',
+
+    suggestions:
+      suggestions
+
+  };
+
+}
+
+
+/* =====================================================
+   REGISTER USER
+   ===================================================== */
+
+function registerUser(
+  data
+) {
+
+  data =
+    data || {};
+
+
+  const username =
+    normalizeUsername_(
+      data.username
+    );
+
+
+  const domain =
+    getMailboxDomain();
+
+
+  const email =
+    username + domain;
+
+
+  const fullName =
+    clean_(
+      data.fullName
+    );
+
+
+  const designation =
+    clean_(
+      data.designation
+    );
+
+
+  const department =
+    clean_(
+      data.department
+    );
+
+
+  const mobile =
+    normalizeMobile_(
+      data.mobile
+    );
+
+
+  const recoveryEmail =
+    normalizeEmail_(
+      data.recoveryEmail
+    );
+
+
+  const password =
+    String(
+      data.password || ''
+    );
+
+
+  const confirmPassword =
+    String(
+      data.confirmPassword || ''
+    );
+
+
+  /* ===================================================
+     VALIDATION
+     =================================================== */
+
+  if (!username) {
+
+    throw new Error(
+      'Mailbox username is required.'
+    );
+
+  }
+
+
+  if (
+    !isValidUsername_(
+      username
+    )
+  ) {
+
+    throw new Error(
+      'Invalid mailbox username. Use 3-30 characters containing letters, numbers, dot, underscore or hyphen.'
+    );
+
+  }
+
+
+  if (!fullName) {
+
+    throw new Error(
+      'Full Name is required.'
+    );
+
+  }
+
+
+  if (!designation) {
+
+    throw new Error(
+      'Designation is required.'
+    );
+
+  }
+
+
+  if (!department) {
+
+    throw new Error(
+      'Department is required.'
+    );
+
+  }
+
+
+  if (
+    !isValidIndianMobile_(
+      mobile
+    )
+  ) {
+
+    throw new Error(
+      'Please enter a valid 10-digit Indian mobile number.'
+    );
+
+  }
+
+
+  if (
+    recoveryEmail &&
+    !isValidEmail_(
+      recoveryEmail
+    )
+  ) {
+
+    throw new Error(
+      'Please enter a valid Recovery Email address.'
+    );
+
+  }
+
+
+  if (
+    password.length < 8
+  ) {
+
+    throw new Error(
+      'Password must contain at least 8 characters.'
+    );
+
+  }
+
+
+  if (
+    password !==
+    confirmPassword
+  ) {
+
+    throw new Error(
+      'Password and Confirm Password do not match.'
+    );
+
+  }
+
+
+  /* ===================================================
+     USERS SHEET
+     =================================================== */
+
+  const sheet =
+    getUsersSheet_();
+
+
+  const users =
+    getUsersObjects_();
+
+
+  /* ===================================================
+     DUPLICATE EMAIL
+     =================================================== */
+
+  const duplicateEmail =
+    users.some(
+      function(user) {
+
+        return (
+          normalizeEmail_(
+            user.Email_Address
+          ) === email
+        );
+
+      }
+    );
+
+
+  if (duplicateEmail) {
+
+    throw new Error(
+      'This mailbox address is already registered. Please choose another username.'
+    );
+
+  }
+
+
+  /* ===================================================
+     DUPLICATE MOBILE
+     =================================================== */
+
+  const duplicateMobile =
+    users.some(
+      function(user) {
+
+        return (
+          normalizeMobile_(
+            user.Mobile
+          ) === mobile
+        );
+
+      }
+    );
+
+
+  if (duplicateMobile) {
+
+    throw new Error(
+      'This mobile number is already registered.'
+    );
+
+  }
+
+
+  /* ===================================================
+     DUPLICATE RECOVERY EMAIL
+     =================================================== */
+
+  if (recoveryEmail) {
+
+    const duplicateRecovery =
+      users.some(
+        function(user) {
+
+          return (
+            normalizeEmail_(
+              user.Recovery_Email
+            ) ===
+            recoveryEmail
+          );
+
+        }
+      );
+
+
+    if (duplicateRecovery) {
+
+      throw new Error(
+        'This Recovery Email is already registered.'
+      );
+
+    }
+
+  }
+
+
+  /* ===================================================
+     USER ID
+     =================================================== */
+
+  const userId =
+    generateUserId_(
+      users
+    );
+
+
+  const now =
+    new Date();
+
+
+  /* ===================================================
+     CREATE USER ROW
+     =================================================== */
+
+  const row = [
+
+    userId,
+
+    email,
+
+    sha256_(
+      password
+    ),
+
+    fullName,
+
+    designation,
+
+    department,
+
+    mobile,
+
+    recoveryEmail,
+
+    'USER',
+
+    'ACTIVE',
+
+    '',
+
+    now,
+
+    '',
+
+    0,
+
+    '',
+
+    'NO',
+
+    'NO'
+
+  ];
+
+
+  sheet.appendRow(
+    row
+  );
+
+
+  /* ===================================================
+     RESPONSE
+     =================================================== */
+
+  return {
+
+    ok: true,
+
+    userId:
+      userId,
+
+    username:
+      username,
+
+    email:
+      email,
+
+    domain:
+      domain,
+
+    message:
+      'User registered successfully.'
+
+  };
+
+}
+
+
+/* =====================================================
+   GET USERS SPREADSHEET
+   ===================================================== */
+
+function getUsersSpreadsheet_() {
+
+  return SpreadsheetApp.openById(
+    USERS_SPREADSHEET_ID
+  );
+
+}
+
+
+/* =====================================================
+   GET USERS SHEET
+   ===================================================== */
+
+function getUsersSheet_() {
+
+  const ss =
+    getUsersSpreadsheet_();
+
+
+  let sheet =
+    ss.getSheetByName(
+      USERS_SHEET_NAME
+    );
+
+
+  /*
+   * Automatically create the sheet
+   * if it does not exist.
+   */
+
+  if (!sheet) {
+
+    sheet =
+      ss.insertSheet(
+        USERS_SHEET_NAME
+      );
+
+    setupSheetHeaders_(
+      sheet,
+      USERS_HEADERS
+    );
+
+  }
+
+
+  return sheet;
+
+}
+
+
+/* =====================================================
+   GET USERS
+   ===================================================== */
+
+function getUsersObjects_() {
+
+  const sheet =
+    getUsersSheet_();
+
+
+  const lastRow =
+    sheet.getLastRow();
+
+
+  const lastColumn =
+    sheet.getLastColumn();
+
+
+  if (
+    lastRow < 2 ||
+    lastColumn < 1
+  ) {
+
+    return [];
+
+  }
+
+
+  const values =
+    sheet
+      .getRange(
+        1,
+        1,
+        lastRow,
+        lastColumn
+      )
+      .getValues();
+
+
+  const headers =
+    values[0];
+
+
+  return values
+    .slice(1)
+    .map(
+      function(row, index) {
+
+        const obj = {};
+
+
+        headers.forEach(
+          function(header, i) {
+
+            obj[
+              String(header)
+            ] = row[i];
+
+          }
+        );
+
+
+        obj._rowNumber =
+          index + 2;
+
+
+        return obj;
+
+      }
+    )
+    .filter(
+      function(obj) {
+
+        return String(
+          obj.User_ID || ''
+        ).trim() !== '';
+
+      }
+    );
+
+}
+
+
+/* =====================================================
+   SETUP HEADERS
+   ===================================================== */
+
+function setupSheetHeaders_(
+  sheet,
+  headers
+) {
+
+  if (
+    sheet.getLastRow() === 0
+  ) {
+
+    sheet
+      .getRange(
+        1,
+        1,
+        1,
+        headers.length
+      )
+      .setValues([
+        headers
+      ]);
+
+    return;
+
+  }
+
+
+  const current =
+    getHeaders_(
+      sheet
+    );
+
+
+  const missing =
+    headers.filter(
+      function(header) {
+
+        return (
+          current.indexOf(
+            header
+          ) === -1
+        );
+
+      }
+    );
+
+
+  if (missing.length) {
+
+    sheet
+      .getRange(
+        1,
+        current.length + 1,
+        1,
+        missing.length
+      )
+      .setValues([
+        missing
+      ]);
+
+  }
+
+}
+
+
+/* =====================================================
+   GET HEADERS
+   ===================================================== */
+
+function getHeaders_(
+  sheet
+) {
+
+  if (
+    sheet.getLastColumn() === 0
+  ) {
+
+    return [];
+
+  }
+
+
+  return sheet
+    .getRange(
+      1,
+      1,
+      1,
+      sheet.getLastColumn()
+    )
+    .getValues()[0]
+    .map(
+      String
+    );
+
+}
+
+
+/* =====================================================
+   GENERATE USER ID
+   ===================================================== */
+
+function generateUserId_(
+  users
+) {
+
+  let max =
+    0;
+
+
+  users.forEach(
+    function(user) {
+
+      const id =
+        String(
+          user.User_ID || ''
+        );
+
+
+      const match =
+        id.match(
+          /^USR(\d+)$/i
+        );
+
+
+      if (match) {
+
+        const number =
+          parseInt(
+            match[1],
+            10
+          );
+
+
+        if (
+          number > max
+        ) {
+
+          max =
+            number;
+
+        }
+
+      }
+
+    }
+  );
+
+
+  return (
+    'USR' +
+    String(
+      max + 1
+    ).padStart(
+      4,
+      '0'
+    )
+  );
+
+}
+
+
+/* =====================================================
+   CLEAN TEXT
+   ===================================================== */
+
+function clean_(
+  value
+) {
+
+  return String(
+    value || ''
+  )
+    .trim()
+    .replace(
+      /\s+/g,
+      ' '
+    );
+
+}
+
+
+/* =====================================================
+   USERNAME
+   ===================================================== */
+
+function normalizeUsername_(
+  username
+) {
+
+  return String(
+    username || ''
+  )
+    .replace(
+      /[\u00A0\u200B-\u200D\uFEFF]/g,
+      ''
+    )
+    .trim()
+    .toLowerCase();
+
+}
+
+
+function isValidUsername_(
+  username
+) {
+
+  return /^[a-z0-9][a-z0-9._-]{2,29}$/
+    .test(
+      String(username || '')
+    );
+
+}
+
+
+/* =====================================================
+   DOMAIN
+   ===================================================== */
+
+function isValidDomain_(
+  domain
+) {
+
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i
+    .test(
+      String(domain || '')
+    );
+
+}
+
+
+/* =====================================================
+   EMAIL
+   ===================================================== */
+
+function normalizeEmail_(
+  email
+) {
+
+  return String(
+    email || ''
+  )
+    .replace(
+      /\u00A0/g,
+      ' '
+    )
+    .replace(
+      /[\u200B-\u200D\uFEFF]/g,
+      ''
+    )
+    .trim()
+    .toLowerCase();
+
+}
+
+
+function isValidEmail_(
+  email
+) {
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    .test(
+      String(email || '')
+    );
+
+}
+
+
+/* =====================================================
+   MOBILE
+   ===================================================== */
+
+function normalizeMobile_(
+  mobile
+) {
+
+  let value =
+    String(
+      mobile || ''
+    )
+      .replace(
+        /\D/g,
+        ''
+      );
+
+
+  if (
+    value.startsWith('91') &&
+    value.length === 12
+  ) {
+
+    value =
+      value.substring(
+        2
+      );
+
+  }
+
+
+  return value;
+
+}
+
+
+function isValidIndianMobile_(
+  mobile
+) {
+
+  return /^[6-9]\d{9}$/
+    .test(
+      String(mobile || '')
+    );
+
+}
+
+
+/* =====================================================
+   SHA-256
+   ===================================================== */
+
+function sha256_(
+  text
+) {
+
+  const bytes =
+    Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      String(text),
+      Utilities.Charset.UTF_8
+    );
+
+
+  return bytes
+    .map(
+      function(b) {
+
+        const value =
+          b < 0
+            ? b + 256
+            : b;
+
+
+        const hex =
+          value.toString(
+            16
+          );
+
+
+        return (
+          hex.length === 1
+            ? '0' + hex
+            : hex
+        );
+
+      }
+    )
+    .join('');
+
+}
+
+
+/* =====================================================
+   ERROR
+   ===================================================== */
+
+function errorMessage_(
+  error
+) {
+
+  if (!error) {
+
+    return 'Unknown error.';
+
+  }
+
+
+  return (
+    error.message ||
+    String(error)
+  );
+
+}
